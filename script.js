@@ -9,6 +9,7 @@ const inputDuration = document.querySelector('.form__input--duration');
 const inputCadence = document.querySelector('.form__input--cadence');
 const inputElevation = document.querySelector('.form__input--elevation');
 
+// the main class
 class App {
   #map;
   #mapEvent;
@@ -16,11 +17,14 @@ class App {
   constructor() {
     this._getPosition();
 
+    this._getDataFromLocalStorage();
+
     form.addEventListener('submit', this._newWorkout.bind(this));
     inputType.addEventListener('change', this._toggleElevationField.bind(this));
     containerWorkouts.addEventListener('click', this._moveToPopup.bind(this));
   }
 
+  // get position on map
   _getPosition() {
     if (navigator.geolocation)
       navigator.geolocation.getCurrentPosition(
@@ -30,7 +34,7 @@ class App {
         }
       );
   }
-
+  // load map from the api
   _loadMap(position) {
     const { latitude, longitude } = position.coords;
     const coords = [latitude, longitude];
@@ -42,14 +46,18 @@ class App {
     }).addTo(this.#map);
 
     this.#map.on('click', this._showForm.bind(this));
+    this.#workouts.forEach(work => {
+      const type = work.cadence ? 'running' : 'cycling';
+      this._renderWorkoutMarker(type, work);
+    });
   }
-
+  // show form of new workouts
   _showForm(mapE) {
     this.#mapEvent = mapE;
     form.classList.remove('hidden');
     inputDistance.focus();
   }
-
+  // hide the form after completion
   _hideForm() {
     inputCadence.value =
       inputElevation.value =
@@ -60,18 +68,20 @@ class App {
     form.classList.add('hidden');
     setTimeout(() => (form.style.display = 'grid'), 1);
   }
+
+  // toggling the fields cadence and elevartion gain
   _toggleElevationField() {
     inputCadence.closest('.form__row').classList.toggle('form__row--hidden');
     inputElevation.closest('.form__row').classList.toggle('form__row--hidden');
   }
-
+  // check that input is numbers
   _isValidInput(...numbers) {
     for (let i = 0; i < numbers.length; i++) {
       if (!Number.isFinite(numbers[i])) return false;
     }
     return true;
   }
-
+  // adding new workout
   _newWorkout(e) {
     e.preventDefault();
 
@@ -87,7 +97,6 @@ class App {
     const duration = +inputDuration.value;
     const { lat, lng } = this.#mapEvent.latlng;
     let workout;
-    // Check is data is valid
 
     // If workout running, create running object
 
@@ -126,7 +135,7 @@ class App {
         '';
 
     //display the marker
-    this._renderWorkoutMarker(lat, lng, type, workout);
+    this._renderWorkoutMarker(type, workout);
 
     // render workout on list
     this._renderWorkout(workout, type);
@@ -134,9 +143,12 @@ class App {
     // hide form and show list
 
     this._hideForm();
+
+    // add to local storage
+    this._setLocalStorage();
   }
-  _renderWorkoutMarker(lat, lng, type, workout) {
-    L.marker([lat, lng])
+  _renderWorkoutMarker(type, workout) {
+    L.marker(workout.coords)
       .addTo(this.#map)
       .bindPopup(
         L.popup({
@@ -152,15 +164,12 @@ class App {
       )
       .openPopup();
   }
-
+  // render workout on the page
   _renderWorkout(workout, type) {
-    console.log(workout);
     let html = `<li class="workout workout--${type}" data-id="${workout.id}">
     <h2 class="workout__title">${workout.description}</h2>
     <div class="workout__details">
-        <span class="workout__icon">${
-          workout instanceof Running ? '🏃‍♂️' : '🚴‍♀️'
-        }</span>
+        <span class="workout__icon">${workout.cadence ? '🏃‍♂️' : '🚴‍♀️'}</span>
       <span class="workout__value">${workout.distance}</span>
       <span class="workout__unit">km</span>
     </div>
@@ -169,7 +178,9 @@ class App {
       <span class="workout__value">${workout.duration}</span>
       <span class="workout__unit">min</span>
     </div>`;
-    if (workout instanceof Running) {
+
+    // check its running or cycling
+    if (workout.cadence) {
       html += ` <div class="workout__details">
       <span class="workout__icon">⚡️</span>
       <span class="workout__value">${workout.pace.toFixed(1)}</span>
@@ -181,7 +192,7 @@ class App {
       <span class="workout__unit">spm</span>
     </div>
   </li>`;
-    } else if (workout instanceof Cycling) {
+    } else if (workout.elevationGain) {
       html += ` <div class="workout__details">
       <span class="workout__icon">⚡️</span>
       <span class="workout__value">${workout.speed.toFixed(1)}</span>
@@ -196,6 +207,7 @@ class App {
     }
     form.insertAdjacentHTML('afterend', html);
   }
+  // moving to the location of workout on the map when pressing on it
   _moveToPopup(e) {
     const workoutEl = e.target.closest('.workout');
 
@@ -210,8 +222,25 @@ class App {
         duration: 1,
       },
     });
-
-    workout.click();
+  }
+  // adding objects to local storage
+  _setLocalStorage() {
+    localStorage.setItem('workouts', JSON.stringify(this.#workouts));
+  }
+  // getting the data from local storage
+  _getDataFromLocalStorage() {
+    const data = JSON.parse(localStorage.getItem('workouts'));
+    if (!data) return;
+    this.#workouts = data;
+    this.#workouts.forEach(work => {
+      const type = work.cadence ? 'running' : 'cycling';
+      this._renderWorkout(work, type);
+    });
+  }
+  // resetting the local storage
+  _reset() {
+    localStorage.removeItem('workouts');
+    location.reload();
   }
 }
 
@@ -219,15 +248,12 @@ class Workout {
   date = new Date();
   id = (Date.now() + '').slice(-10);
   constructor(coords, distance, duration) {
-    // this.data=
-    // this.id=
     this.coords = coords; // latitude , longitude
     this.distance = distance; // in km
     this.duration = duration; // in minutes
     this._setDateDescription();
-    this.clicks = 0;
   }
-
+  // setting the description of a workout panel
   _setDateDescription() {
     const months = [
       'January',
@@ -248,12 +274,8 @@ class Workout {
       months[this.date.getMonth()]
     } ${this.date.getDay()}`;
   }
-
-  click() {
-    this.clicks++;
-  }
 }
-
+// derived class from class workout of type running
 class Running extends Workout {
   constructor(coords, distance, duration, cadence) {
     super(coords, distance, duration);
@@ -264,7 +286,7 @@ class Running extends Workout {
     this.pace = this.duration / this.distance;
   }
 }
-
+// derived class from workout class of type running
 class Cycling extends Workout {
   constructor(coords, distance, duration, elevationGain) {
     super(coords, distance, duration);
@@ -277,7 +299,6 @@ class Cycling extends Workout {
   }
 }
 
-/////////////////////////////////////////
-// Application Architecture
-
 const app = new App();
+
+/****************note: all the app running on the app class */
